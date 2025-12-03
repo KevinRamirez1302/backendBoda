@@ -1,21 +1,72 @@
 import db from '../connectDB.js';
 
 export const createGuest = async (req, res) => {
-  const { name, numberGuests, asiste, message } = req.body;
+  const { name, numberGuests, asiste, message, recaptchaToken } = req.body;
 
+  // Validar datos obligatorios
   if (!name || !numberGuests || asiste === undefined) {
-    return res.status(400).send('Faltan datos obligatorios');
+    return res.status(400).json({ error: 'Faltan datos obligatorios' });
+  }
+
+  // Validar token de reCAPTCHA
+  if (!recaptchaToken) {
+    return res
+      .status(400)
+      .json({ error: 'Token de reCAPTCHA no proporcionado' });
   }
 
   try {
+    // Verificar el token con Google reCAPTCHA
+    const secretKey = process.env.RECAPTCHA_SECRET_KEY;
+
+    const verifyResponse = await fetch(
+      `https://www.google.com/recaptcha/api/siteverify`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `secret=${secretKey}&response=${recaptchaToken}`,
+      }
+    );
+
+    const verifyData = await verifyResponse.json();
+
+    // Verificar si la validación fue exitosa
+    if (!verifyData.success) {
+      console.error('Error de reCAPTCHA:', verifyData['error-codes']);
+      return res.status(400).json({
+        error: 'Verificación de reCAPTCHA fallida',
+        details: verifyData['error-codes'],
+      });
+    }
+
+    // Verificar el score (reCAPTCHA v3 devuelve un score de 0.0 a 1.0)
+    // Un score más alto significa que es más probable que sea un humano
+    if (verifyData.score < 0.5) {
+      console.warn(`Score bajo de reCAPTCHA: ${verifyData.score}`);
+      return res.status(400).json({
+        error:
+          'Verificación de seguridad fallida. Por favor, intenta de nuevo.',
+      });
+    }
+
+    // Si la verificación es exitosa, proceder con el guardado
     const sql =
       'INSERT INTO invitados (nombre_completo, numero_invitados, asistira, mensaje) VALUES ($1, $2, $3, $4) RETURNING *';
 
     const { rows } = await db.query(sql, [name, numberGuests, asiste, message]);
 
-    res.status(201).json(rows[0]);
+    res.status(201).json({
+      success: true,
+      data: rows[0],
+      recaptchaScore: verifyData.score, // Opcional: para debugging
+    });
   } catch (error) {
     console.error('Error al crear el invitado:', error);
-    res.status(500).send('Error al crear el invitado');
+    res.status(500).json({
+      error: 'Error al crear el invitado',
+      message: error.message,
+    });
   }
 };
