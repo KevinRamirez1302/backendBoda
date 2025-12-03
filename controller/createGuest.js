@@ -1,11 +1,19 @@
 import db from '../connectDB.js';
+// Si fetch no está disponible globalmente, importa node-fetch
+import fetch from 'node-fetch';
 
 export const createGuest = async (req, res) => {
-  const { name, numberGuests, asiste, message, recaptchaToken } = req.body;
+  let { name, numberGuests, asiste, message, recaptchaToken } = req.body;
+
+  // Convertir los valores recibidos a los tipos esperados
+  numberGuests = Number(numberGuests);
+  asiste = typeof asiste === 'boolean' ? asiste : asiste === 'yes';
 
   // Validar datos obligatorios
-  if (!name || !numberGuests || asiste === undefined) {
-    return res.status(400).json({ error: 'Faltan datos obligatorios' });
+  if (!name || !numberGuests || typeof asiste !== 'boolean') {
+    return res
+      .status(400)
+      .json({ error: 'Faltan datos obligatorios o tipos incorrectos' });
   }
 
   // Validar token de reCAPTCHA
